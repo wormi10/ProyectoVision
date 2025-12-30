@@ -23,7 +23,7 @@ DATASET_PATH = 'dataset'  # Ruta a tu carpeta dataset
 MODEL_PATH = 'modelo_manzanas.pkl'
 SCALER_PATH = 'scaler.pkl'
 TEST_SIZE = 0.2  # 80% entrenamiento, 20% prueba
-RANDOM_STATE = 42
+RANDOM_STATE = 123
 
 # ============================================================
 # 1. CARGA Y EXPLORACIÓN DEL DATASET
@@ -81,25 +81,26 @@ def cargar_dataset(dataset_path):
 # ============================================================
 # 2. PREPROCESAMIENTO
 # ============================================================
+
+
 def preprocesar_imagen(img):
     """
-    Aplica preprocesamiento a una imagen:
-    - Redimensionamiento (ya son 100x100)
-    - Suavizado Gaussiano
-    - Ecualización de histograma
+    Preprocesado compatible con histogramas HSV:
+    - Suavizado Gaussiano (reduce ruido)
+    - Normalización ligera
+    NO cambia el espacio de color
     """
+
     # Suavizado para reducir ruido
     img_suavizada = cv2.GaussianBlur(img, (5, 5), 1.5)
-    
-    # Ecualización adaptativa en LAB para mejorar contraste
-    lab = cv2.cvtColor(img_suavizada, cv2.COLOR_BGR2LAB)
-    l, a, b = cv2.split(lab)
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
-    l = clahe.apply(l)
-    lab = cv2.merge([l, a, b])
-    img_mejorada = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-    
-    return img_mejorada
+
+    # Normalización opcional (mantiene colores)
+    img_suavizada = cv2.normalize(
+        img_suavizada, None, 0, 255, cv2.NORM_MINMAX
+    )
+
+    return img_suavizada
+
 
 # ============================================================
 # 3. SEGMENTACIÓN
@@ -117,11 +118,6 @@ def segmentar_fruta(img):
     lower_bound = np.array([0, 30, 30])
     upper_bound = np.array([180, 255, 255])
     mask = cv2.inRange(hsv, lower_bound, upper_bound)
-    
-    # Operaciones morfológicas para limpiar la máscara
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
     
     # Aplicar máscara a la imagen original
     img_segmentada = cv2.bitwise_and(img, img, mask=mask)
@@ -196,7 +192,7 @@ def entrenar_modelo(X_train, y_train):
     modelo = SVC(kernel='rbf', C=10, gamma='scale', probability=True, random_state=RANDOM_STATE)
     modelo.fit(X_train_scaled, y_train)
     
-    print("✓ Modelo entrenado correctamente")
+    print("Modelo entrenado correctamente")
     
     return modelo, scaler
 
@@ -219,7 +215,7 @@ def evaluar_modelo(modelo, scaler, X_test, y_test, nombres_clases):
     
     # Métricas
     accuracy = accuracy_score(y_test, y_pred)
-    print(f"\n✓ Precisión (Accuracy): {accuracy*100:.2f}%\n")
+    print(f"\n Precisión (Accuracy): {accuracy*100:.2f}%\n")
     
     # Reporte de clasificación
     print("Reporte de Clasificación:")
@@ -237,10 +233,62 @@ def evaluar_modelo(modelo, scaler, X_test, y_test, nombres_clases):
     plt.xlabel('Etiqueta Predicha')
     plt.tight_layout()
     plt.savefig('matriz_confusion.png', dpi=300)
-    print("✓ Matriz de confusión guardada en 'matriz_confusion.png'")
+    print("Matriz de confusión guardada en 'matriz_confusion.png'")
     plt.show()
     
     return y_pred, accuracy
+def visualizar_preprocesado_y_segmentacion(imagenes, nombres_clases=None, etiquetas=None):
+
+    """
+    Muestra un ejemplo aleatorio del dataset:
+    - Imagen original
+    - Imagen preprocesada
+    - Máscara de segmentación
+    - Imagen segmentada
+    """
+
+    # Elegir imagen aleatoria
+    idx = np.random.randint(0, len(imagenes))
+    img = imagenes[idx]
+
+    # Preprocesado
+    img_prep = preprocesar_imagen(img)
+
+    # Segmentación
+    img_seg, mask = segmentar_fruta(img_prep)
+
+    # Convertir a RGB para matplotlib
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img_prep_rgb = cv2.cvtColor(img_prep, cv2.COLOR_BGR2RGB)
+    img_seg_rgb = cv2.cvtColor(img_seg, cv2.COLOR_BGR2RGB)
+
+    # Título con clase si existe
+    titulo = "Ejemplo aleatorio"
+    if etiquetas is not None and nombres_clases is not None:
+        titulo += f" - Clase: {nombres_clases[etiquetas[idx]]}"
+
+    # Visualización
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    fig.suptitle(titulo, fontsize=16, fontweight='bold')
+
+    axes[0, 0].imshow(img_rgb)
+    axes[0, 0].set_title("Imagen original")
+    axes[0, 0].axis("off")
+
+    axes[0, 1].imshow(img_prep_rgb)
+    axes[0, 1].set_title("Imagen preprocesada")
+    axes[0, 1].axis("off")
+
+    axes[1, 0].imshow(mask, cmap='gray')
+    axes[1, 0].set_title("Máscara de segmentación")
+    axes[1, 0].axis("off")
+
+    axes[1, 1].imshow(img_seg_rgb)
+    axes[1, 1].set_title("Imagen segmentada")
+    axes[1, 1].axis("off")
+
+    plt.tight_layout()
+    plt.show()
 
 # ============================================================
 # 7. VISUALIZACIÓN DE RESULTADOS
@@ -270,7 +318,7 @@ def visualizar_ejemplos(imagenes_test, y_test, y_pred, nombres_clases, n_ejemplo
     
     plt.tight_layout()
     plt.savefig('ejemplos_clasificacion.png', dpi=300)
-    print("✓ Ejemplos guardados en 'ejemplos_clasificacion.png'")
+    print(" Ejemplos guardados en 'ejemplos_clasificacion.png'")
     plt.show()
 
 # ============================================================
@@ -289,9 +337,9 @@ def main():
     imagenes, etiquetas, nombres_clases = cargar_dataset(DATASET_PATH)
     
     if len(imagenes) == 0:
-        print("❌ Error: No se encontraron imágenes en el dataset")
+        print(" Error: No se encontraron imágenes en el dataset")
         return
-    
+    visualizar_preprocesado_y_segmentacion(imagenes, nombres_clases, etiquetas)
     # 2. Dividir en train y test
     print("\n" + "="*60)
     print("DIVIDIENDO DATASET")
@@ -308,11 +356,11 @@ def main():
     print("="*60)
     print("Procesando imágenes de entrenamiento...")
     X_train = np.array([extraer_caracteristicas(img) for img in X_train_img])
-    print(f"✓ Características de entrenamiento: {X_train.shape}")
-    
+    print(f" Características de entrenamiento: {X_train.shape}")
+   
     print("Procesando imágenes de prueba...")
     X_test = np.array([extraer_caracteristicas(img) for img in X_test_img])
-    print(f"✓ Características de prueba: {X_test.shape}")
+    print(f" Características de prueba: {X_test.shape}")
     
     # 4. Entrenar modelo
     modelo, scaler = entrenar_modelo(X_train, y_train)
